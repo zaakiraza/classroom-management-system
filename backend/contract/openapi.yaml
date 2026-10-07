@@ -1,0 +1,2069 @@
+openapi: 3.1.0
+info:
+  title: Classroom Management System API
+  version: 1.0.0
+  description: |
+    Single-school classroom management system organized around Rooms (class sections).
+    Roles: admin, teacher, student. Bearer JWT authentication. Includes GET /rooms/{id}/quizzes
+    to close the student quiz-discovery gap.
+servers:
+  - url: /api
+tags:
+  - name: auth
+  - name: users
+  - name: rooms
+  - name: enrollment
+  - name: attendance
+  - name: announcements
+  - name: assignments
+  - name: submissions
+  - name: quizzes
+  - name: gradebook
+  - name: results
+  - name: notifications
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      operationId: auth_login
+      tags:
+        - auth
+      summary: Log in with email and password
+      security: []
+      x-story-ids:
+        - STORY-002
+      x-models:
+        - User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Authenticated; role-based home route
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - accessToken
+                  - role
+                  - home
+                properties:
+                  accessToken:
+                    type: string
+                  role:
+                    $ref: "#/components/schemas/Role"
+                  home:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /auth/set-password:
+    post:
+      operationId: auth_set_password
+      tags:
+        - auth
+      summary: Set password with one-time emailed link token
+      security: []
+      x-story-ids:
+        - STORY-002
+      x-models:
+        - User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+                - password
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        "200":
+          description: Password set
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /users:
+    get:
+      operationId: users_list
+      tags:
+        - users
+      summary: Search accounts (admin)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-001
+        - STORY-003
+      x-models:
+        - User
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: role
+          in: query
+          schema:
+            $ref: "#/components/schemas/Role"
+      responses:
+        "200":
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: users_create
+      tags:
+        - users
+      summary: Create a teacher or student account (admin)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-001
+        - STORY-003
+      x-models:
+        - User
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - role
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                role:
+                  $ref: "#/components/schemas/Role"
+                enrollmentYear:
+                  type: integer
+      responses:
+        "201":
+          description: Created in pending state; set-password link valid 72h
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /users/{id}:
+    patch:
+      operationId: users_update
+      tags:
+        - users
+      summary: Edit/deactivate account or resend set-password link (admin)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-001
+        - STORY-003
+      x-models:
+        - User
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/UserUpdate"
+                - type: object
+                  properties:
+                    action:
+                      type: string
+                      enum:
+                        - resend-set-password
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /rooms:
+    get:
+      operationId: rooms_list
+      tags:
+        - rooms
+      summary: List all rooms (admin)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-004
+      x-models:
+        - Room
+      responses:
+        "200":
+          description: All rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: rooms_create
+      tags:
+        - rooms
+      summary: Create a room with owning teacher (admin)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-004
+      x-models:
+        - Room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - ownerTeacherId
+              properties:
+                name:
+                  type: string
+                ownerTeacherId:
+                  type: string
+                termCloseDate:
+                  type: string
+                  format: date
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /rooms/mine:
+    get:
+      operationId: rooms_list_mine
+      tags:
+        - rooms
+      summary: List rooms owned by the current teacher
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-002
+      x-models:
+        - Room
+      responses:
+        "200":
+          description: Owned rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /rooms/enrolled:
+    get:
+      operationId: rooms_list_enrolled
+      tags:
+        - rooms
+      summary: List rooms the current student is actively enrolled in
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-013
+      x-models:
+        - Room
+        - Enrollment
+      responses:
+        "200":
+          description: Enrolled rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /rooms/{id}:
+    patch:
+      operationId: rooms_update
+      tags:
+        - rooms
+      summary: Reassign owner, set termCloseDate, deactivate (admin)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-004
+      x-models:
+        - Room
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomUpdate"
+      responses:
+        "200":
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /rooms/{id}/students:
+    get:
+      operationId: rooms_students_list
+      tags:
+        - enrollment
+      summary: Room roster (admin or owning teacher)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-005
+      x-models:
+        - Enrollment
+        - User
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "200":
+          description: Enrollments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Enrollment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: rooms_students_enroll
+      tags:
+        - enrollment
+      summary: Enroll a student (admin or owning teacher)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-005
+      x-models:
+        - Enrollment
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - studentId
+              properties:
+                studentId:
+                  type: string
+      responses:
+        "201":
+          description: Enrolled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Enrollment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /rooms/{id}/students/{studentId}:
+    delete:
+      operationId: rooms_students_remove
+      tags:
+        - enrollment
+      summary: Remove a student from the roster; history retained
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-005
+      x-models:
+        - Enrollment
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+        - $ref: "#/components/parameters/StudentId"
+      responses:
+        "204":
+          description: Removed (sets removedAt)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /rooms/{id}/attendance:
+    get:
+      operationId: attendance_get
+      tags:
+        - attendance
+      summary: Get attendance record for a date (admin or owning teacher)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-006
+      x-models:
+        - AttendanceRecord
+        - AttendanceEntry
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Record with entries, or record null when none exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  record:
+                    anyOf:
+                      - $ref: "#/components/schemas/AttendanceRecord"
+                      - type: "null"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: attendance_upsert
+      tags:
+        - attendance
+      summary: Create or update the daily attendance record (owning teacher)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-006
+      x-models:
+        - AttendanceRecord
+        - AttendanceEntry
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - date
+                - entries
+              properties:
+                date:
+                  type: string
+                  format: date
+                entries:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - studentId
+                      - status
+                    properties:
+                      studentId:
+                        type: string
+                      status:
+                        $ref: "#/components/schemas/AttendanceStatus"
+      responses:
+        "200":
+          description: Saved record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "423":
+          description: Locked record older than 7 days
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /rooms/{id}/attendance/me:
+    get:
+      operationId: attendance_me
+      tags:
+        - attendance
+      summary: Student's own attendance history with counts
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-006
+        - STORY-013
+      x-models:
+        - AttendanceEntry
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "200":
+          description: Own entries and counts
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - enrollmentActive
+                  - entries
+                  - counts
+                properties:
+                  enrollmentActive:
+                    type: boolean
+                  entries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AttendanceEntry"
+                  counts:
+                    type: object
+                    properties:
+                      present:
+                        type: integer
+                      absent:
+                        type: integer
+                      late:
+                        type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /rooms/{id}/announcements:
+    get:
+      operationId: announcements_list
+      tags:
+        - announcements
+      summary: Room announcements, newest first
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-007
+      x-models:
+        - Announcement
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "200":
+          description: Announcements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Announcement"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: announcements_create
+      tags:
+        - announcements
+      summary: Post an announcement (owning teacher)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-007
+      x-models:
+        - Announcement
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - body
+              properties:
+                title:
+                  type: string
+                body:
+                  type: string
+      responses:
+        "201":
+          description: Created; enrolled students notified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /announcements/{id}:
+    patch:
+      operationId: announcements_update
+      tags:
+        - announcements
+      summary: Edit an announcement (authoring teacher)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-007
+      x-models:
+        - Announcement
+      parameters:
+        - $ref: "#/components/parameters/AnnouncementId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                body:
+                  type: string
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: announcements_delete
+      tags:
+        - announcements
+      summary: Delete an announcement (authoring teacher)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-007
+      x-models:
+        - Announcement
+      parameters:
+        - $ref: "#/components/parameters/AnnouncementId"
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /rooms/{id}/assignments:
+    get:
+      operationId: assignments_list
+      tags:
+        - assignments
+      summary: Room assignments
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-008
+      x-models:
+        - Assignment
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "200":
+          description: Assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Assignment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: assignments_create
+      tags:
+        - assignments
+      summary: Create an assignment (owning teacher)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-008
+      x-models:
+        - Assignment
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - instructions
+                - dueAt
+                - totalPoints
+              properties:
+                title:
+                  type: string
+                instructions:
+                  type: string
+                dueAt:
+                  type: string
+                  format: date-time
+                totalPoints:
+                  type: number
+                  exclusiveMinimum: 0
+      responses:
+        "201":
+          description: Created; enrolled students notified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /assignments/{id}/submission:
+    post:
+      operationId: submissions_upload
+      tags:
+        - submissions
+      summary: Upload or replace own file submission (enrolled student)
+      description: |
+        Allowed extensions .pdf, .png, .jpg, .doc, .docx; max 20 MB (server-enforced).
+        Replacing after the deadline is blocked; late first submissions are flagged isLate.
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-009
+      x-models:
+        - Submission
+      parameters:
+        - $ref: "#/components/parameters/AssignmentId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Stored with timestamp and isLate flag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Submission"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    get:
+      operationId: submissions_get_mine
+      tags:
+        - submissions
+      summary: Get own submission (student) or a specific student's (teacher/admin)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-009
+      x-models:
+        - Submission
+      parameters:
+        - $ref: "#/components/parameters/AssignmentId"
+      responses:
+        "200":
+          description: Submission
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Submission"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /assignments/{id}/submissions:
+    get:
+      operationId: submissions_list
+      tags:
+        - submissions
+      summary: List all submissions for an assignment (owning teacher or admin)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-010
+      x-models:
+        - Submission
+      parameters:
+        - $ref: "#/components/parameters/AssignmentId"
+      responses:
+        "200":
+          description: Submissions with timestamps and Late flags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Submission"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /submissions/{id}/grade:
+    patch:
+      operationId: submissions_grade
+      tags:
+        - submissions
+      summary: Grade a submission (owning teacher)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-010
+      x-models:
+        - Submission
+      parameters:
+        - $ref: "#/components/parameters/SubmissionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - gradePoints
+              properties:
+                gradePoints:
+                  type: number
+                  minimum: 0
+                gradeComment:
+                  type: string
+      responses:
+        "200":
+          description: Graded; student notified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Submission"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /rooms/{id}/quizzes:
+    get:
+      operationId: quizzes_list
+      tags:
+        - quizzes
+      summary: List quizzes in a room (admin, owning teacher, or enrolled student)
+      description: Lets students discover open, upcoming, and completed quizzes.
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-011
+        - STORY-013
+      x-models:
+        - Quiz
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "200":
+          description: Quizzes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Quiz"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: quizzes_create
+      tags:
+        - quizzes
+      summary: Create a quiz with questions and options (owning teacher)
+      description: Each question needs exactly one correct option and points > 0.
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-011
+      x-models:
+        - Quiz
+        - QuizQuestion
+        - QuizOption
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - closesAt
+                - questions
+              properties:
+                title:
+                  type: string
+                opensAt:
+                  type: string
+                  format: date-time
+                closesAt:
+                  type: string
+                  format: date-time
+                questions:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required:
+                      - prompt
+                      - points
+                      - options
+                    properties:
+                      prompt:
+                        type: string
+                      points:
+                        type: number
+                        exclusiveMinimum: 0
+                      options:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                            - text
+                            - isCorrect
+                          properties:
+                            text:
+                              type: string
+                            isCorrect:
+                              type: boolean
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quiz"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /quizzes/{id}:
+    patch:
+      operationId: quizzes_update
+      tags:
+        - quizzes
+      summary: Edit/publish a quiz (owning teacher)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-011
+      x-models:
+        - Quiz
+      parameters:
+        - $ref: "#/components/parameters/QuizId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuizUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quiz"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /quizzes/{id}/results:
+    get:
+      operationId: quizzes_results
+      tags:
+        - quizzes
+      summary: Attempt list and answer distribution (owning teacher or admin)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-011
+      x-models:
+        - QuizAttempt
+      parameters:
+        - $ref: "#/components/parameters/QuizId"
+      responses:
+        "200":
+          description: Results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attempts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        studentId:
+                          type: string
+                        status:
+                          $ref: "#/components/schemas/QuizAttemptStatus"
+                        score:
+                          type: number
+                  distribution:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        questionId:
+                          type: string
+                        optionId:
+                          type: string
+                        count:
+                          type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /quizzes/{id}/attempt:
+    get:
+      operationId: quizzes_attempt_get
+      tags:
+        - quizzes
+      summary: Get own attempt for resumption or completed result (enrolled student)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-012
+      x-models:
+        - Quiz
+        - QuizAttempt
+      parameters:
+        - $ref: "#/components/parameters/QuizId"
+      responses:
+        "200":
+          description: Quiz with optional attempt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizAttemptView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: quizzes_attempt_save
+      tags:
+        - quizzes
+      summary: Save in-progress answers or submit and auto-score (enrolled student)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-012
+      x-models:
+        - QuizAttempt
+      parameters:
+        - $ref: "#/components/parameters/QuizId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - answers
+              properties:
+                answers:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - questionId
+                      - optionId
+                    properties:
+                      questionId:
+                        type: string
+                      optionId:
+                        type: string
+                submit:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          description: On submit, score with per-question correctness; otherwise in_progress
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required:
+                      - score
+                      - perQuestion
+                    properties:
+                      score:
+                        type: number
+                      perQuestion:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/PerQuestionResult"
+                  - type: object
+                    required:
+                      - status
+                    properties:
+                      status:
+                        type: string
+                        enum:
+                          - in_progress
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /rooms/{id}/gradebook:
+    get:
+      operationId: gradebook_get
+      tags:
+        - gradebook
+      summary: Room gradebook for all students (owning teacher or admin)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-013
+      x-models:
+        - Submission
+        - QuizAttempt
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "200":
+          description: Per-student graded items and percentage
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - studentId
+                    - items
+                    - percentage
+                  properties:
+                    studentId:
+                      type: string
+                    items:
+                      type: array
+                      items:
+                        $ref: "#/components/schemas/GradeItem"
+                    percentage:
+                      type: number
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /rooms/{id}/gradebook/me:
+    get:
+      operationId: gradebook_me
+      tags:
+        - gradebook
+      summary: Student's own grades with percentage (enrolled student)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-013
+      x-models:
+        - Submission
+        - QuizAttempt
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "200":
+          description: Own items and percentage
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                  - percentage
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GradeItem"
+                  percentage:
+                    type: number
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /rooms/{id}/result:
+    get:
+      operationId: result_get
+      tags:
+        - results
+      summary: Term result (teacher/admin see draft+published; students published only)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-014
+      x-models:
+        - TermResult
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "200":
+          description: Term result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TermResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: result_publish
+      tags:
+        - results
+      summary: Preview/publish/edit the term result (owning teacher)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-014
+      x-models:
+        - TermResult
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                term:
+                  type: string
+                publish:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved/published result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TermResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "423":
+          description: Term closed; results locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /notifications:
+    get:
+      operationId: notifications_list
+      tags:
+        - notifications
+      summary: Current user's notifications with unread count
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-015
+      x-models:
+        - Notification
+      parameters:
+        - name: unreadOnly
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Notifications and unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - notifications
+                  - unreadCount
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Notification"
+                  unreadCount:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /notifications/read:
+    post:
+      operationId: notifications_mark_read
+      tags:
+        - notifications
+      summary: Mark notifications read (specific ids or all)
+      security:
+        - bearerAuth: []
+      x-story-ids:
+        - STORY-015
+      x-models:
+        - Notification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: New unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - unreadCount
+                properties:
+                  unreadCount:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    RoomId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    StudentId:
+      name: studentId
+      in: path
+      required: true
+      schema:
+        type: string
+    AnnouncementId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    AssignmentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    SubmissionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    QuizId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Invalid credentials or missing token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Access denied
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Duplicate or already-exists
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: string
+    Role:
+      type: string
+      enum:
+        - admin
+        - teacher
+        - student
+    UserStatus:
+      type: string
+      enum:
+        - active
+        - pending
+        - deactivated
+    AttendanceStatus:
+      type: string
+      enum:
+        - present
+        - absent
+        - late
+    QuizAttemptStatus:
+      type: string
+      enum:
+        - in_progress
+        - submitted
+    NotificationType:
+      type: string
+      enum:
+        - assignmentPosted
+        - quizPosted
+        - announcementPosted
+        - resultPublished
+        - assignmentGraded
+        - quizScored
+    User:
+      type: object
+      required:
+        - id
+        - name
+        - email
+        - role
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: "#/components/schemas/Role"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+        enrollmentYear:
+          type: integer
+        setPasswordTokenExpiresAt:
+          type: string
+          format: date-time
+    UserUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: "#/components/schemas/Role"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+        enrollmentYear:
+          type: integer
+    Room:
+      type: object
+      required:
+        - id
+        - name
+        - status
+        - ownerTeacherId
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - deactivated
+        ownerTeacherId:
+          type: string
+        termCloseDate:
+          type: string
+          format: date
+    RoomUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        ownerTeacherId:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - deactivated
+        termCloseDate:
+          type:
+            - string
+            - "null"
+          format: date
+    Enrollment:
+      type: object
+      required:
+        - id
+        - roomId
+        - studentId
+        - enrolledAt
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        studentId:
+          type: string
+        enrolledAt:
+          type: string
+          format: date-time
+        removedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        student:
+          $ref: "#/components/schemas/User"
+    AttendanceRecord:
+      type: object
+      required:
+        - id
+        - roomId
+        - date
+        - entries
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        date:
+          type: string
+          format: date
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttendanceEntry"
+    AttendanceEntry:
+      type: object
+      required:
+        - id
+        - studentId
+        - status
+      properties:
+        id:
+          type: string
+        attendanceRecordId:
+          type: string
+        studentId:
+          type: string
+        status:
+          $ref: "#/components/schemas/AttendanceStatus"
+    Announcement:
+      type: object
+      required:
+        - id
+        - roomId
+        - authorId
+        - title
+        - body
+        - createdAt
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        authorId:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+    Assignment:
+      type: object
+      required:
+        - id
+        - roomId
+        - title
+        - instructions
+        - dueAt
+        - totalPoints
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        title:
+          type: string
+        instructions:
+          type: string
+        dueAt:
+          type: string
+          format: date-time
+        totalPoints:
+          type: number
+    Submission:
+      type: object
+      required:
+        - id
+        - assignmentId
+        - studentId
+        - fileUrl
+        - submittedAt
+        - isLate
+      properties:
+        id:
+          type: string
+        assignmentId:
+          type: string
+        studentId:
+          type: string
+        fileUrl:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        isLate:
+          type: boolean
+        gradePoints:
+          type:
+            - number
+            - "null"
+        gradeComment:
+          type:
+            - string
+            - "null"
+        gradedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+    Quiz:
+      type: object
+      required:
+        - id
+        - roomId
+        - title
+        - closesAt
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        title:
+          type: string
+        opensAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        closesAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuizQuestion"
+    QuizUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        opensAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        closesAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuizQuestionInput"
+    QuizQuestion:
+      type: object
+      required:
+        - id
+        - prompt
+        - points
+        - options
+      properties:
+        id:
+          type: string
+        prompt:
+          type: string
+        points:
+          type: number
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuizOption"
+    QuizQuestionInput:
+      type: object
+      required:
+        - prompt
+        - points
+        - options
+      properties:
+        prompt:
+          type: string
+        points:
+          type: number
+          exclusiveMinimum: 0
+        options:
+          type: array
+          items:
+            type: object
+            required:
+              - text
+              - isCorrect
+            properties:
+              text:
+                type: string
+              isCorrect:
+                type: boolean
+    QuizOption:
+      type: object
+      required:
+        - id
+        - text
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+    QuizAttemptView:
+      type: object
+      required:
+        - quiz
+      properties:
+        quiz:
+          $ref: "#/components/schemas/Quiz"
+        attempt:
+          type: object
+          properties:
+            status:
+              $ref: "#/components/schemas/QuizAttemptStatus"
+            answers:
+              type: array
+              items:
+                type: object
+                properties:
+                  questionId:
+                    type: string
+                  optionId:
+                    type: string
+            score:
+              type:
+                - number
+                - "null"
+            submittedAt:
+              type:
+                - string
+                - "null"
+              format: date-time
+            perQuestion:
+              type: array
+              items:
+                $ref: "#/components/schemas/PerQuestionResult"
+    PerQuestionResult:
+      type: object
+      required:
+        - questionId
+        - chosenOptionId
+        - correctOptionId
+        - isCorrect
+      properties:
+        questionId:
+          type: string
+        chosenOptionId:
+          type:
+            - string
+            - "null"
+        correctOptionId:
+          type: string
+        isCorrect:
+          type: boolean
+    GradeItem:
+      type: object
+      required:
+        - type
+        - itemId
+        - points
+        - total
+      properties:
+        type:
+          type: string
+          enum:
+            - assignment
+            - quiz
+        itemId:
+          type: string
+        points:
+          type: number
+        total:
+          type: number
+        comment:
+          type:
+            - string
+            - "null"
+    TermResult:
+      type: object
+      required:
+        - id
+        - roomId
+        - term
+        - summary
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        term:
+          type: string
+        summary:
+          type: object
+          additionalProperties: true
+        publishedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        lockedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+    Notification:
+      type: object
+      required:
+        - id
+        - type
+        - message
+        - createdAt
+      properties:
+        id:
+          type: string
+        type:
+          $ref: "#/components/schemas/NotificationType"
+        message:
+          type: string
+        link:
+          type:
+            - string
+            - "null"
+        readAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time

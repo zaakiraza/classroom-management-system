@@ -1,0 +1,254 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  admin
+  teacher
+  student
+}
+
+enum UserStatus {
+  active
+  pending
+  deactivated
+}
+
+enum RoomStatus {
+  active
+  deactivated
+}
+
+enum AttendanceStatus {
+  present
+  absent
+  late
+}
+
+enum QuizAttemptStatus {
+  in_progress
+  submitted
+}
+
+enum NotificationType {
+  assignmentPosted
+  quizPosted
+  announcementPosted
+  resultPublished
+  assignmentGraded
+  quizScored
+}
+
+model User {
+  id                         String    @id @default(cuid())
+  name                       String
+  email                      String    @unique
+  role                       Role
+  status                     UserStatus @default(pending)
+  passwordHash               String?
+  setPasswordToken           String?
+  setPasswordTokenExpiresAt  DateTime?
+  enrollmentYear             Int?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  ownedRooms                 Room[]
+  enrollments                Enrollment[]
+  attendanceEntries          AttendanceEntry[]
+  announcements              Announcement[]
+  submissions                Submission[]
+  quizAttempts               QuizAttempt[]
+  notifications              Notification[]
+}
+
+model Room {
+  id              String      @id @default(cuid())
+  name            String
+  status          RoomStatus  @default(active)
+  ownerTeacherId  String
+  termCloseDate   DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  owner           User        @relation("RoomOwner", fields: [ownerTeacherId], references: [id])
+  enrollments     Enrollment[]
+  attendanceRecords AttendanceRecord[]
+  announcements   Announcement[]
+  assignments     Assignment[]
+  quizzes         Quiz[]
+  termResults     TermResult[]
+
+  @@index([ownerTeacherId])
+}
+
+model Enrollment {
+  id         String    @id @default(cuid())
+  roomId     String
+  studentId  String
+  enrolledAt DateTime  @default(now())
+  removedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  room       Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  student    User      @relation(fields: [studentId], references: [id])
+
+  @@unique([roomId, studentId])
+  @@index([studentId])
+}
+
+model AttendanceRecord {
+  id      String   @id @default(cuid())
+  roomId  String
+  date    DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  room    Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  entries AttendanceEntry[]
+
+  @@unique([roomId, date])
+}
+
+model AttendanceEntry {
+  id                 String           @id @default(cuid())
+  attendanceRecordId String
+  studentId          String
+  status             AttendanceStatus
+  attendanceRecord   AttendanceRecord @relation(fields: [attendanceRecordId], references: [id], onDelete: Cascade)
+  student            User             @relation(fields: [studentId], references: [id])
+
+  @@unique([attendanceRecordId, studentId])
+  @@index([studentId])
+}
+
+model Announcement {
+  id        String    @id @default(cuid())
+  roomId    String
+  authorId  String
+  title     String
+  body      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id])
+
+  @@index([roomId])
+  @@index([authorId])
+}
+
+model Assignment {
+  id          String       @id @default(cuid())
+  roomId      String
+  title       String
+  instructions String
+  dueAt       DateTime
+  totalPoints Float
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  room        Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+
+  @@index([roomId])
+}
+
+model Submission {
+  id           String    @id @default(cuid())
+  assignmentId String
+  studentId    String
+  fileUrl      String
+  submittedAt  DateTime  @default(now())
+  isLate       Boolean
+  gradePoints  Float?
+  gradeComment String?
+  gradedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student      User      @relation(fields: [studentId], references: [id])
+
+  @@unique([assignmentId, studentId])
+  @@index([studentId])
+}
+
+model Quiz {
+  id          String    @id @default(cuid())
+  roomId      String
+  title       String
+  opensAt     DateTime?
+  closesAt    DateTime
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  room        Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  questions   QuizQuestion[]
+  attempts    QuizAttempt[]
+
+  @@index([roomId])
+}
+
+model QuizQuestion {
+  id      String  @id @default(cuid())
+  quizId  String
+  prompt  String
+  points  Float
+  quiz    Quiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  options QuizOption[]
+
+  @@index([quizId])
+}
+
+model QuizOption {
+  id         String       @id @default(cuid())
+  questionId String
+  text       String
+  isCorrect  Boolean
+  question   QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+}
+
+model QuizAttempt {
+  id          String            @id @default(cuid())
+  quizId      String
+  studentId   String
+  status      QuizAttemptStatus @default(in_progress)
+  answers     String
+  score       Float?
+  submittedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  quiz        Quiz              @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  student     User              @relation(fields: [studentId], references: [id])
+
+  @@unique([quizId, studentId])
+  @@index([studentId])
+}
+
+model TermResult {
+  id          String   @id @default(cuid())
+  roomId      String
+  term        String
+  summary     String
+  publishedAt DateTime?
+  lockedAt    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, term])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  message   String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
